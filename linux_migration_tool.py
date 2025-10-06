@@ -37,7 +37,7 @@ def get_usb_drives():
         usb_drives = []
         for device in devices.get('blockdevices', []):
             # Check top-level device
-            if device.get('rm') and device.get('mountpoint'):
+            if 'rm' in device and device.get('mountpoint'): # Check all mounted devices, manually mounted doesn't always get rm flag, even though it is an USB or external disk.
                 usb_drives.append({
                     'name': device.get('label') or device.get('name'),
                     'mount': device.get('mountpoint'),
@@ -46,7 +46,7 @@ def get_usb_drives():
             # Also check children (e.g. partitions)
             if 'children' in device:
                 for child in device['children']:
-                    if child.get('rm') and child.get('mountpoint'):
+                    if 'rm' in child and child.get('mountpoint'):
                         usb_drives.append({
                             'name': child.get('label') or child.get('name'),
                             'mount': child.get('mountpoint'),
@@ -144,8 +144,9 @@ def get_installed_apps():
 
 def create_backup(selected_files, apps_list, destination):
     """
-    Create a compressed tar.gz backup containing the selected files and a manifest
-    listing the applications and other metadata.
+    Create a compressed backup. Prefer streaming with Python 3.14's
+    compression.zstd (producing .tar.zst). Falls back to .tar.gz if zstd
+    isn't available.
     """
     manifest = {
         'created': datetime.now().isoformat(),
@@ -153,27 +154,58 @@ def create_backup(selected_files, apps_list, destination):
         'apps': apps_list,
         'system': platform.platform()
     }
-    backup_name = f"migration_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
-    backup_path = os.path.join(destination, backup_name)
 
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    # Try native zstd (Python 3.14+)
     try:
-        with tarfile.open(backup_path, "w:gz") as tar:
-            # Add each file/directory preserving relative path from the home directory.
-            home = os.path.expanduser('~')
-            for file in selected_files:
-                if os.path.exists(file):
-                    arcname = os.path.relpath(file, home)
-                    tar.add(file, arcname=arcname)
-            # Write manifest.json directly into the archive without a temporary file.
-            manifest_data = json.dumps(manifest, indent=4)
-            manifest_bytes = manifest_data.encode('utf-8')
-            info = tarfile.TarInfo(name="manifest.json")
-            info.size = len(manifest_bytes)
-            info.mtime = datetime.now().timestamp()
-            tar.addfile(tarinfo=info, fileobj=BytesIO(manifest_bytes))
-        return True, backup_path
-    except Exception as e:
-        return False, str(e)
+        import compression.zstd as zstd  # Python 3.14 native zstd
+    except Exception:
+        zstd = None
+
+    if zstd:
+        backup_name = f"migration_backup_{timestamp}.tar.zst"
+        backup_path = os.path.join(destination, backup_name)
+        try:
+            # Stream tar into zstd compressor (no temporary tar file)
+            with zstd.open(backup_path, "wb") as zf:
+                # 'w|' is stream mode for tarfile (writes sequentially to fileobj)
+                with tarfile.open(fileobj=zf, mode="w|") as tar:
+                    home = os.path.expanduser('~')
+                    for file in selected_files:
+                        if os.path.exists(file):
+                            arcname = os.path.relpath(file, home)
+                            tar.add(file, arcname=arcname)
+                    # Add manifest
+                    manifest_data = json.dumps(manifest, indent=4)
+                    manifest_bytes = manifest_data.encode('utf-8')
+                    info = tarfile.TarInfo(name="manifest.json")
+                    info.size = len(manifest_bytes)
+                    info.mtime = datetime.now().timestamp()
+                    tar.addfile(tarinfo=info, fileobj=BytesIO(manifest_bytes))
+            return True, backup_path
+        except Exception as e:
+            return False, str(e)
+    else:
+        # Fallback to gzip (.tar.gz) using the existing approach
+        backup_name = f"migration_backup_{timestamp}.tar.gz"
+        backup_path = os.path.join(destination, backup_name)
+        try:
+            with tarfile.open(backup_path, "w:gz") as tar:
+                home = os.path.expanduser('~')
+                for file in selected_files:
+                    if os.path.exists(file):
+                        arcname = os.path.relpath(file, home)
+                        tar.add(file, arcname=arcname)
+                manifest_data = json.dumps(manifest, indent=4)
+                manifest_bytes = manifest_data.encode('utf-8')
+                info = tarfile.TarInfo(name="manifest.json")
+                info.size = len(manifest_bytes)
+                info.mtime = datetime.now().timestamp()
+                tar.addfile(tarinfo=info, fileobj=BytesIO(manifest_bytes))
+            return True, backup_path
+        except Exception as e:
+            return False, str(e)
 
 def check_package_exists(package_manager, app_name):
     """
@@ -317,7 +349,7 @@ def import_flow():
     try:
         backup_files = [
             f for f in os.listdir(selected['mount'])
-            if f.startswith('migration_backup') and f.endswith('.tar.gz')
+            if f.startswith('migration_backup') and f.endswith(('.tar.gz', '.tar.zst', '.tar'))
         ]
     except Exception as e:
         input(f"Error accessing drive: {e}\nPress Enter to return.")
@@ -342,8 +374,29 @@ def import_flow():
 
     print("\nRestoring files...")
     try:
-        with tarfile.open(backup_file, "r:gz") as tar:
-            tar.extractall(path=os.path.expanduser('~'))
+        home = os.path.expanduser('~')
+        if backup_file.endswith('.tar.zst'):
+            try:
+                import compression.zstd as zstd
+            except Exception:
+                zstd = None
+
+            if zstd is None:
+                print("zstd restore requires Python 3.14's compression.zstd module but it was not found.")
+            else:
+                # Stream-decompress and extract without writing a temporary tar file
+                with zstd.open(backup_file, "rb") as zf:
+                    # stream mode for tarfile reader
+                    with tarfile.open(fileobj=zf, mode="r|") as tar:
+                        for member in tar:
+                            tar.extract(member, path=home)
+        elif backup_file.endswith('.tar.gz'):
+            with tarfile.open(backup_file, "r:gz") as tar:
+                tar.extractall(path=home)
+        else:
+            # plain .tar
+            with tarfile.open(backup_file, "r:") as tar:
+                tar.extractall(path=home)
         print("Files restored successfully!")
     except Exception as e:
         print(f"Error restoring files: {e}")
