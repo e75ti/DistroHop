@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test-3.13:
+  test-3_13:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -24,7 +24,7 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-  test-3.14:
+  test-3_14:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
