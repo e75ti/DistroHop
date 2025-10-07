@@ -30,20 +30,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check Python 3.14 availability and pick version
+      - name: Find available Python version
         id: select-python
         run: |
-          # List available Python versions from setup-python repository or pyenv
-          # Since actions/setup-python supports exact version strings, we check against a hardcoded list or API
-          # Here we'll just try 3.14 first, if fails fallback to 3.14.0-rc.3
-          echo "Checking availability of Python versions"
-
-          # This is a workaround since setup-python does not expose a list API, so simulate fallback:
-          # Try setting python-version to 3.14 and see if it installs successfully
-          # Actually, we can't do that here, so we just fallback logic:
-
-          # We assume 3.14 is generally available, but to simulate fallback:
-          echo "::set-output name=version::3.14"
+          echo "Checking if Python 3.14 is available..."
+          VERSIONS=$(curl -s https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json)
+          if echo "$VERSIONS" | grep -q '"version": "3.14.0"'; then
+            echo "Python 3.14.0 is available"
+            echo "version=3.14.0" >> $GITHUB_OUTPUT
+          elif echo "$VERSIONS" | grep -q '"version": "3.14.0-rc.3"'; then
+            echo "Python 3.14.0-rc.3 is available"
+            echo "version=3.14.0-rc.3" >> $GITHUB_OUTPUT
+          else
+            echo "Neither 3.14.0 nor 3.14.0-rc.3 is available"
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v4
