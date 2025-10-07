@@ -2,11 +2,14 @@ import os
 import tarfile
 import json
 import pytest
+import sys
 
 try:
     import compression.zstd as zstd
 except Exception:
     zstd = None
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from linux_migration_tool import create_backup
 
