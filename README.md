@@ -2,7 +2,7 @@
 > I've made several enhancements, including:
 > - **Zstandard (zstd) compression** support for faster and more efficient backups
 > - Code **refactoring** for improved readability and maintainability
-> 
+> - Added **GitHub Actions** for automated CI checks
 > These changes aim to modernize and improve the tool while maintaining its original purpose and simplicity.  
 > Contributions, feedback, and suggestions are welcome!
 
