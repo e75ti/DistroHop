@@ -1,3 +1,11 @@
+> 📌 **Note:** This is a **fork** of the original [Linux Migration Tool](https://github.com/ORIGINAL_REPO_LINK_HERE).  
+> I've made several enhancements, including:
+> - **Zstandard (zstd) compression** support for faster and more efficient backups
+> - Code **refactoring** for improved readability and maintainability
+> 
+> These changes aim to modernize and improve the tool while maintaining its original purpose and simplicity.  
+> Contributions, feedback, and suggestions are welcome!
+
 
 <h1 align="center">📦 Linux Migration Tool</h1>
     <p align="center">A simple CLI tool for backing up and restoring user files and applications on Linux.</p>
